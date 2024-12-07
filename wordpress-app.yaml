@@ -93,7 +93,7 @@ Parameters:
     ConstraintDescription: must be the name of an existing EC2 KeyPair.
     Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
     Type: AWS::EC2::KeyPair::KeyName
-    Default: fall2024 #update your ec2 key here-test
+    Default: samplekeypair #update your ec2 key here-test
   SSHLocation:
     AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
     ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.

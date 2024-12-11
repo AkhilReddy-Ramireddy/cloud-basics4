@@ -1,44 +1,141 @@
-AWSTemplateFormatVersion: "2010-09-09"
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: github-codepipeline
+
+Parameters:
+
+  GitHubOwner:
+    Type: String
+    Default: AkhilReddy-Ramireddy  # Replace with your GitHub username (corrected)
+    AllowedPattern: "[A-Za-z0-9-]+"
+
+  RepositoryName:
+    Type: String
+    Default: cloud-basics4  # Replace with your GitHub repository name (corrected)
+    AllowedPattern: "[A-Za-z0-9-]+"
+
+  BranchName:
+    Type: String
+    Default: main
+    AllowedPattern: "[A-Za-z0-9-]+"
+
+  ApplicationStackName:
+    Type: String
+    Default: codepipeline-github-application1
+    AllowedPattern: "[A-Za-z0-9-]+"
+
 Resources:
-  CodePipeline:
+
+  PipelineArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+
+  AppPipeline:
     Type: AWS::CodePipeline::Pipeline
     Properties:
-      RoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/service-role/AWSCodePipelineServiceRole
+      Name: github-wordpress-pipeline
+      ArtifactStore:
+        Type: S3
+        Location: !Ref PipelineArtifactsBucket
+      RoleArn:
+        !GetAtt CodePipelineRole.Arn
       Stages:
         - Name: Source
           Actions:
-            - Name: GitHubSource
+            - Name: SourceAction
               ActionTypeId:
                 Category: Source
                 Owner: ThirdParty
-                Provider: GitHub
                 Version: 1
-              Configuration:
-                Owner: AkhilReddy-Ramireddy
-                Repo: cloud-basics4
-                Branch: main
-                OAuthToken: !Ref GitHubOAuthToken
-                OutputArtifactFormat: CODE_ZIP
+                Provider: GitHub
               OutputArtifacts:
-                - Name: SourceArtifact
+                - Name: AppSourceCode
+              Configuration:
+                Owner: !Ref GitHubOwner
+                Repo: !Ref RepositoryName
+                Branch: !Ref BranchName
+                OAuthToken: '{{resolve:secretsmanager:github-oauth-token:SecretString}}'  # Ensure this is stored in Secrets Manager
+                PollForSourceChanges: false
+              RunOrder: 1
         - Name: Deploy
           Actions:
-            - Name: DeployStack
+            - Name: CloudFormationDeploy
               ActionTypeId:
                 Category: Deploy
                 Owner: AWS
                 Provider: CloudFormation
-                Version: 1
-              Configuration:
-                StackName: wordpress-stack
-                Capabilities: CAPABILITY_NAMED_IAM
-                TemplatePath: SourceArtifact::wordpress-app.yaml
+                Version: '1'
               InputArtifacts:
-                - Name: SourceArtifact
-      ArtifactStore:
-        Type: S3
-        Location: !Sub codepipeline-${AWS::AccountId}-${AWS::Region}
-Parameters:
-  GitHubOAuthToken:
-    Type: String
-    Description: GitHub OAuth token stored in Secrets Manager
+                - Name: AppSourceCode
+              Configuration:
+                ActionMode: CREATE_UPDATE
+                Capabilities: CAPABILITY_IAM
+                RoleArn: !GetAtt CloudformationRole.Arn
+                StackName: !Ref ApplicationStackName
+                TemplatePath: !Sub "AppSourceCode::wordpress-app.yaml"
+              RunOrder: 1
+
+  AppPipelineWebhook:
+    Type: 'AWS::CodePipeline::Webhook'
+    Properties:
+      Authentication: GITHUB_HMAC
+      AuthenticationConfiguration:
+        SecretToken: '{{resolve:secretsmanager:github-oauth-token:SecretString}}'  # Ensure this is the same token as above
+      Filters:
+        - JsonPath: "$.ref"
+          MatchEquals: refs/heads/{Branch}
+      TargetPipeline: !Ref AppPipeline
+      TargetAction: SourceAction
+      Name: AppPipelineWebhook
+      TargetPipelineVersion: !GetAtt AppPipeline.Version
+      RegisterWithThirdParty: true
+
+  CodePipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          Effect: Allow
+          Principal:
+            Service: codepipeline.amazonaws.com
+          Action: sts:AssumeRole
+
+  CodePipelineServiceRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action:
+              - iam:PassRole
+            Resource: "*"
+            Effect: Allow
+            Condition:
+              StringEqualsIfExists:
+                iam:PassedToService:
+                  - cloudformation.amazonaws.com
+                  - ec2.amazonaws.com
+                  - s3.amazonaws.com
+                  - secretsmanager.amazonaws.com
+          - Action: "*"
+            Resource: "*"
+            Effect: Allow
+      PolicyName: CodePipelineServiceRolePolicy
+      Roles:
+        - !Ref CodePipelineRole
+
+  CloudformationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          Effect: Allow
+          Principal:
+            Service: cloudformation.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess

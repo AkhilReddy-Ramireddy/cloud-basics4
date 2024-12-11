@@ -1,0 +1,38 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Resources:
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP and SSH access
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+
+  WebServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      SecurityGroups:
+        - !Ref WebServerSecurityGroup
+      KeyName: samplekeypair
+      ImageId: ami-0c02fb55956c7d316 # Amazon Linux 2 AMI (update this to your region)
+
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage: 20
+      DBInstanceClass: db.t2.micro
+      Engine: MySQL
+      MasterUsername: admin
+      MasterUserPassword: !Ref DBPassword
+      DBName: wordpress
+Parameters:
+  DBPassword:
+    Type: String
+    Description: Database password stored in Secrets Manager

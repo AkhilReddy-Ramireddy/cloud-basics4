@@ -1,0 +1,44 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Resources:
+  CodePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      RoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/service-role/AWSCodePipelineServiceRole
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: GitHubSource
+              ActionTypeId:
+                Category: Source
+                Owner: ThirdParty
+                Provider: GitHub
+                Version: 1
+              Configuration:
+                Owner: AkhilReddy-Ramireddy
+                Repo: cloud-basics4
+                Branch: main
+                OAuthToken: !Ref GitHubOAuthToken
+                OutputArtifactFormat: CODE_ZIP
+              OutputArtifacts:
+                - Name: SourceArtifact
+        - Name: Deploy
+          Actions:
+            - Name: DeployStack
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: 1
+              Configuration:
+                StackName: wordpress-stack
+                Capabilities: CAPABILITY_NAMED_IAM
+                TemplatePath: SourceArtifact::wordpress-app.yaml
+              InputArtifacts:
+                - Name: SourceArtifact
+      ArtifactStore:
+        Type: S3
+        Location: !Sub codepipeline-${AWS::AccountId}-${AWS::Region}
+Parameters:
+  GitHubOAuthToken:
+    Type: String
+    Description: GitHub OAuth token stored in Secrets Manager
